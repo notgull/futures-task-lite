@@ -3,7 +3,12 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+#[cfg(feature = "ext")]
+mod ext;
 pub mod impls;
+
+#[cfg(feature = "ext")]
+pub use ext::ExecutorExt;
 
 use core::future::Future;
 

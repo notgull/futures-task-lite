@@ -16,3 +16,4 @@ alloc = []
 
 async-task = ["async-task-crate", "alloc"]
 async-executor = ["async-executor-crate", "async-task", "std"]
+ext = []
