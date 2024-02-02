@@ -3,13 +3,15 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+mod impls;
+
 use core::future::Future;
 
 /// Trait for an executor that [`Future`]s can be spawned onto.
 // TODO: Replace `F` here with a GAT once 1.65 is available on Debian Stable.
 pub trait Executor<F: Future> {
     /// The task type produced by spawning a future.
-    /// 
+    ///
     /// It is assumed that dropping a task cancels it implicitly.
     type Task: Future<Output = F::Output>;
 
@@ -31,9 +33,10 @@ impl<F: Future, E: Executor<F> + ?Sized> Executor<F> for &mut E {
 }
 
 /// Trait for a task that can be canceled.
-pub trait CancellableTask: Future {
+// TODO: GAT and TAIT
+pub trait CancellableTask<'a>: Future + 'a {
     /// The future returned by trying to cancel this task.
-    type Cancel: Future<Output = Option<Self::Output>>;
+    type Cancel: Future<Output = Option<Self::Output>> + 'a;
 
     /// Cancel this future.
     fn cancel(self) -> Self::Cancel;
@@ -48,8 +51,8 @@ pub trait DetachableTask: Future {
 #[cfg(feature = "alloc")]
 mod alloc_impls {
     use super::Executor;
-    use core::future::Future;
     use alloc::boxed::Box;
+    use core::future::Future;
 
     impl<F: Future, E: Executor<F> + ?Sized> Executor<F> for Box<E> {
         type Task = E::Task;
@@ -57,7 +60,7 @@ mod alloc_impls {
 
         #[inline]
         fn try_spawn(&mut self, future: F) -> Result<Self::Task, Self::Error> {
-            (**self).try_spawn(future)            
+            (**self).try_spawn(future)
         }
     }
 }
