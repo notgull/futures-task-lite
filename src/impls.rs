@@ -41,3 +41,36 @@ mod async_task_impl {
         }
     }
 }
+
+#[cfg(feature = "async-executor")]
+mod async_executor_impl {
+    use crate::Executor;
+    use async_executor_crate::{LocalExecutor, Task};
+
+    use core::convert::Infallible;
+    use core::future::Future;
+
+    impl<'a, F: Future + Send + 'a> Executor<F> for async_executor_crate::Executor<'a>
+    where
+        F::Output: Send + 'a,
+    {
+        type Task = Task<F::Output>;
+        type Error = Infallible;
+
+        fn try_spawn(&self, future: F) -> Result<Self::Task, Self::Error> {
+            Ok(self.spawn(future))
+        }
+    }
+
+    impl<'a, F: Future + 'a> Executor<F> for LocalExecutor<'a>
+    where
+        F::Output: 'a,
+    {
+        type Task = Task<F::Output>;
+        type Error = Infallible;
+
+        fn try_spawn(&self, future: F) -> Result<Self::Task, Self::Error> {
+            Ok(self.spawn(future))
+        }
+    }
+}

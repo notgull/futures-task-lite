@@ -19,7 +19,7 @@ pub trait Executor<F: Future> {
     type Error;
 
     /// Try to spawn the future on this executor.
-    fn try_spawn(&mut self, future: F) -> Result<Self::Task, Self::Error>;
+    fn try_spawn(&self, future: F) -> Result<Self::Task, Self::Error>;
 }
 
 impl<F: Future, E: Executor<F> + ?Sized> Executor<F> for &mut E {
@@ -27,7 +27,17 @@ impl<F: Future, E: Executor<F> + ?Sized> Executor<F> for &mut E {
     type Error = E::Error;
 
     #[inline]
-    fn try_spawn(&mut self, future: F) -> Result<Self::Task, Self::Error> {
+    fn try_spawn(&self, future: F) -> Result<Self::Task, Self::Error> {
+        (**self).try_spawn(future)
+    }
+}
+
+impl<F: Future, E: Executor<F> + ?Sized> Executor<F> for &E {
+    type Task = E::Task;
+    type Error = E::Error;
+
+    #[inline]
+    fn try_spawn(&self, future: F) -> Result<Self::Task, Self::Error> {
         (**self).try_spawn(future)
     }
 }
@@ -52,6 +62,8 @@ pub trait DetachableTask: Future {
 mod alloc_impls {
     use super::Executor;
     use alloc::boxed::Box;
+    use alloc::rc::Rc;
+    use alloc::sync::Arc;
     use core::future::Future;
 
     impl<F: Future, E: Executor<F> + ?Sized> Executor<F> for Box<E> {
@@ -59,7 +71,27 @@ mod alloc_impls {
         type Error = E::Error;
 
         #[inline]
-        fn try_spawn(&mut self, future: F) -> Result<Self::Task, Self::Error> {
+        fn try_spawn(&self, future: F) -> Result<Self::Task, Self::Error> {
+            (**self).try_spawn(future)
+        }
+    }
+
+    impl<F: Future, E: Executor<F> + ?Sized> Executor<F> for Rc<E> {
+        type Task = E::Task;
+        type Error = E::Error;
+
+        #[inline]
+        fn try_spawn(&self, future: F) -> Result<Self::Task, Self::Error> {
+            (**self).try_spawn(future)
+        }
+    }
+
+    impl<F: Future, E: Executor<F> + ?Sized> Executor<F> for Arc<E> {
+        type Task = E::Task;
+        type Error = E::Error;
+
+        #[inline]
+        fn try_spawn(&self, future: F) -> Result<Self::Task, Self::Error> {
             (**self).try_spawn(future)
         }
     }
