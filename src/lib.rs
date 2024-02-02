@@ -3,7 +3,7 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-mod impls;
+pub mod impls;
 
 use core::future::Future;
 

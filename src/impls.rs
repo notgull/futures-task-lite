@@ -86,6 +86,25 @@ mod tokio_impl {
     use core::pin::Pin;
     use core::task::{Poll, Context};
 
+    /// Implements traits for `tokio`'s global runtime.
+    #[derive(Debug, Clone, Copy, Default)]
+    pub struct TokioGlobal {
+        _private: ()
+    }
+
+    impl<F: Future + Send + 'static> Executor<F> for TokioGlobal where F::Output: Send + 'static {
+        type Task = TokioTask<F::Output>;
+        type Error = tokio::runtime::TryCurrentError;
+
+        fn try_spawn(&self, future: F) -> Result<Self::Task, Self::Error> {
+            Handle::try_current().map(|handle| match handle.try_spawn(future) {
+                Ok(task) => task,
+                Err(infl) => match infl {}
+            })
+        }
+    }
+
+
     /// A wrapper around a [`tokio::task::JoinHandle`] with task semantics.
     pub struct TokioTask<T>(Option<JoinHandle<T>>);
 
@@ -168,3 +187,6 @@ mod tokio_impl {
         }
     }
 }
+
+#[cfg(feature = "tokio")]
+pub use tokio_impl::{TokioGlobal, TokioTask};
