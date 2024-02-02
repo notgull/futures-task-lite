@@ -3,6 +3,7 @@
 use crate::Executor;
 
 use alloc::vec;
+use core::convert::Infallible;
 use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
@@ -40,6 +41,18 @@ pub trait ExecutorExt<F: Future>: Executor<F> {
 }
 
 impl<F: Future, E: Executor<F>> ExecutorExt<F> for E {}
+
+/// Executors that are infallible.
+pub trait InfallibleExecutor<F: Future>: Executor<F, Error = Infallible> {
+    /// Spawn a task infallibly.
+    fn spawn(&self, future: F) -> Self::Task {
+        match self.try_spawn(future) {
+            Ok(task) => task,
+            Err(infl) => match infl {},
+        }
+    }
+}
+impl<F: Future, E: Executor<F, Error = Infallible>> InfallibleExecutor<F> for E {}
 
 pin_project! {
     /// Future for the `all` method.

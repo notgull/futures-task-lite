@@ -8,7 +8,7 @@ mod ext;
 pub mod impls;
 
 #[cfg(feature = "ext")]
-pub use ext::{BoxedExecutor, ExecutorExt, LocalBoxedExecutor};
+pub use ext::{BoxedExecutor, ExecutorExt, LocalBoxedExecutor, InfallibleExecutor};
 
 use core::future::Future;
 
