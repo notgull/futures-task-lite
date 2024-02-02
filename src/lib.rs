@@ -9,6 +9,8 @@ use core::future::Future;
 // TODO: Replace `F` here with a GAT once 1.65 is available on Debian Stable.
 pub trait Executor<F: Future> {
     /// The task type produced by spawning a future.
+    /// 
+    /// It is assumed that dropping a task cancels it implicitly.
     type Task: Future<Output = F::Output>;
 
     /// The error type that can occur while spawning.
@@ -26,6 +28,21 @@ impl<F: Future, E: Executor<F> + ?Sized> Executor<F> for &mut E {
     fn try_spawn(&mut self, future: F) -> Result<Self::Task, Self::Error> {
         (**self).try_spawn(future)
     }
+}
+
+/// Trait for a task that can be canceled.
+pub trait CancellableTask: Future {
+    /// The future returned by trying to cancel this task.
+    type Cancel: Future<Output = Option<Self::Output>>;
+
+    /// Cancel this future.
+    fn cancel(self) -> Self::Cancel;
+}
+
+/// Trait for a task that can be detached to run forever.
+pub trait DetachableTask: Future {
+    /// Detach this future and let it run forever.
+    fn detach(self);
 }
 
 #[cfg(feature = "alloc")]
