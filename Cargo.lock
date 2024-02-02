@@ -157,6 +157,7 @@ version = "0.1.0"
 dependencies = [
  "async-executor",
  "async-task",
+ "pin-project-lite",
  "tokio",
 ]
 

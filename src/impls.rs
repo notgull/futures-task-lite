@@ -77,33 +77,35 @@ mod async_executor_impl {
 
 #[cfg(feature = "tokio")]
 mod tokio_impl {
-    use crate::{Executor, CancellableTask, DetachableTask};
+    use crate::{CancellableTask, DetachableTask, Executor};
     use tokio::runtime::{Handle, Runtime};
     use tokio::task::JoinHandle;
 
     use core::convert::Infallible;
-    use core::future::{Ready, ready, Future};
+    use core::future::{ready, Future, Ready};
     use core::pin::Pin;
-    use core::task::{Poll, Context};
+    use core::task::{Context, Poll};
 
     /// Implements traits for `tokio`'s global runtime.
     #[derive(Debug, Clone, Copy, Default)]
     pub struct TokioGlobal {
-        _private: ()
+        _private: (),
     }
 
-    impl<F: Future + Send + 'static> Executor<F> for TokioGlobal where F::Output: Send + 'static {
+    impl<F: Future + Send + 'static> Executor<F> for TokioGlobal
+    where
+        F::Output: Send + 'static,
+    {
         type Task = TokioTask<F::Output>;
         type Error = tokio::runtime::TryCurrentError;
 
         fn try_spawn(&self, future: F) -> Result<Self::Task, Self::Error> {
             Handle::try_current().map(|handle| match handle.try_spawn(future) {
                 Ok(task) => task,
-                Err(infl) => match infl {}
+                Err(infl) => match infl {},
             })
         }
     }
-
 
     /// A wrapper around a [`tokio::task::JoinHandle`] with task semantics.
     pub struct TokioTask<T>(Option<JoinHandle<T>>);
@@ -117,7 +119,7 @@ mod tokio_impl {
         /// Get a mutable reference to the inner `JoinHandle`.
         pub fn get_mut(&mut self) -> &mut JoinHandle<T> {
             self.0.as_mut().unwrap()
-        } 
+        }
 
         /// Convert to the inner join handle.
         pub fn into_inner(mut self) -> JoinHandle<T> {
@@ -169,7 +171,10 @@ mod tokio_impl {
         }
     }
 
-    impl<F: Future + Send + 'static> Executor<F> for Handle where F::Output: Send + 'static {
+    impl<F: Future + Send + 'static> Executor<F> for Handle
+    where
+        F::Output: Send + 'static,
+    {
         type Error = Infallible;
         type Task = TokioTask<F::Output>;
 
@@ -178,7 +183,10 @@ mod tokio_impl {
         }
     }
 
-    impl<F: Future + Send + 'static> Executor<F> for Runtime where F::Output: Send + 'static {
+    impl<F: Future + Send + 'static> Executor<F> for Runtime
+    where
+        F::Output: Send + 'static,
+    {
         type Error = Infallible;
         type Task = TokioTask<F::Output>;
 

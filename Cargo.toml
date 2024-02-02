@@ -7,6 +7,7 @@ authors = ["John Nunley <dev@notgull.net>"]
 [dependencies]
 async-executor-crate = { package = "async-executor", version = "1.8.0", optional = true }
 async-task-crate = { package = "async-task", version = "4.7.0", optional = true }
+pin-project-lite = { version = "0.2.13", optional = true }
 tokio = { version = "1.35.1", features = ["rt"], optional = true }
 
 [features]
@@ -16,4 +17,4 @@ alloc = []
 
 async-task = ["async-task-crate", "alloc"]
 async-executor = ["async-executor-crate", "async-task", "std"]
-ext = []
+ext = ["pin-project-lite"]
