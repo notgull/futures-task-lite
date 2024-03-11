@@ -1,46 +1,19 @@
 //! Extension trait for executors.
 
-use crate::Executor;
+extern crate std; // TODO
 
-use alloc::vec;
+use crate::{CancellableTask, Executor};
+
+use alloc::boxed::Box;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+
 use core::convert::Infallible;
 use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 
 use pin_project_lite::pin_project;
-
-/// Additional methods for the [`Executor`] trait.
-///
-/// [`Executor`]: crate::Executor
-pub trait ExecutorExt<F: Future>: Executor<F> {
-    /// Poll a series of futures in parallel.
-    fn all(&self, futures: impl IntoIterator<Item = F>) -> AllFuture<'_, F, Self> {
-        // Collect the tasks into a vector.
-        let result = futures
-            .into_iter()
-            .map(|future| self.try_spawn(future))
-            .collect::<Result<Vec<_>, _>>();
-
-        match result {
-            Ok(tasks) => AllFuture {
-                error: None,
-                executor: self,
-                tasks: tasks.into_iter(),
-                current: None,
-            },
-
-            Err(err) => AllFuture {
-                error: Some(err),
-                executor: self,
-                tasks: vec::Vec::new().into_iter(),
-                current: None,
-            },
-        }
-    }
-}
-
-impl<F: Future, E: Executor<F>> ExecutorExt<F> for E {}
 
 /// Executors that are infallible.
 pub trait InfallibleExecutor<F: Future>: Executor<F, Error = Infallible> {
@@ -54,54 +27,138 @@ pub trait InfallibleExecutor<F: Future>: Executor<F, Error = Infallible> {
 }
 impl<F: Future, E: Executor<F, Error = Infallible>> InfallibleExecutor<F> for E {}
 
+/// Poll a series of futures in parallel, using a collection for the tasks.
+pub async fn all<F: Future, E: Executor<F>>(
+    exec: E,
+    futures: impl IntoIterator<Item = F>,
+    outputs: &mut impl Extend<F::Output>,
+) -> Result<(), E::Error> {
+    // Collect the tasks into a vector.
+    let tasks = futures
+        .into_iter()
+        .map(|future| exec.try_spawn(future))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Poll for all of the outputs.
+    for task in tasks {
+        outputs.extend(Some(task.await));
+    }
+
+    Ok(())
+}
+
+/// Poll a series of futures in parallel, spawning no more than `limit` at a time.
+pub async fn all_limited<F: Future, E: Executor<SemaphoreFuture<F>>>(
+    exec: E,
+    futures: impl IntoIterator<Item = F>,
+    outputs: &mut impl Extend<F::Output>,
+    limit: usize,
+) -> Result<(), E::Error> {
+    let mut tasks = Vec::new();
+    let semaphore = Arc::new(async_lock::Semaphore::new(limit));
+
+    for future in futures {
+        // Wait for a new semaphore guard to be available.
+        let guard = semaphore.acquire_arc().await;
+
+        // Spawn a future that runs, then drops the semaphore guard.
+        let task = exec.try_spawn(SemaphoreFuture {
+            inner: future,
+            _guard: guard,
+        })?;
+
+        // Push the task.
+        tasks.push(task);
+    }
+
+    // Collect the results.
+    for task in tasks {
+        outputs.extend(Some(task.await));
+    }
+
+    Ok(())
+}
+
+/// Race a set of futures together.
+pub async fn or<'cancel, F: Future, E: Executor<SenderFuture<F>>>(
+    exec: E,
+    futures: impl IntoIterator<Item = F>,
+) -> Result<F::Output, E::Error>
+where
+    E::Task: CancellableTask<'cancel>,
+{
+    let (sender, receiver) = async_channel::bounded(1);
+    let mut tasks = Vec::new();
+
+    // Spawn all of the tasks with a future that sends its output after.
+    for future in futures {
+        let task = exec.try_spawn(SenderFuture {
+            inner: future,
+            channel: sender.clone(),
+        })?;
+        tasks.push(task);
+    }
+
+    // Wait for one of the tasks to complete.
+    let completed = async move {
+        receiver
+            .recv()
+            .await
+            .expect("all of the racing futures panicked")
+    }
+    .await;
+
+    // Cancel all of the tasks.
+    for task in tasks {
+        task.cancel().await;
+    }
+
+    Ok(completed)
+}
+
 pin_project! {
-    /// Future for the `all` method.
-    pub struct AllFuture<'a, F: Future, E: Executor<F>> where E: ?Sized {
-        // An error occurred while spawning tasks.
-        error: Option<E::Error>,
-
-        // The executor.
-        executor: &'a E,
-
-        // The list of tasks to poll.
-        tasks: vec::IntoIter<E::Task>,
-
-        // The task we are currently polling.
+    /// A future that wraps another future, then drops a semaphore.
+    #[doc(hidden)]
+    pub struct SemaphoreFuture<F: Future> {
+        // The inner future.
         #[pin]
-        current: Option<E::Task>,
+        inner: F,
+
+        // Guard for the semaphore.
+        _guard: async_lock::SemaphoreGuardArc
     }
 }
 
-impl<F: Future, E: Executor<F> + ?Sized> Future for AllFuture<'_, F, E> {
-    type Output = Result<(), E::Error>;
+impl<F: Future> Future for SemaphoreFuture<F> {
+    type Output = F::Output;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut this = self.project();
+        self.project().inner.poll(cx)
+    }
+}
 
-        // If there is an error, return early.
-        if let Some(error) = this.error.take() {
-            return Poll::Ready(Err(error));
-        }
+pin_project! {
+    /// A future that wraps another and then sends it on.
+    #[doc(hidden)]
+    pub struct SenderFuture<F: Future> {
+        // The inner future.
+        #[pin]
+        inner: F,
 
-        loop {
-            // Poll the current task, if any.
-            if let Some(current) = this.current.as_mut().as_pin_mut() {
-                if current.poll(cx).is_ready() {
-                    // This task is finished, set up for the next one.
-                    this.current.as_mut().set(None);
-                } else {
-                    return Poll::Pending;
-                }
-            }
+        // The channel to send to.
+        channel: async_channel::Sender<F::Output>
+    }
+}
 
-            // See if there is another task to poll.
-            match this.tasks.next() {
-                Some(task) => {
-                    // There is, recurse.
-                    this.current.as_mut().set(Some(task));
-                }
-                None => return Poll::Ready(Ok(())),
-            }
+impl<F: Future> Future for SenderFuture<F> {
+    type Output = Result<(), async_channel::TrySendError<F::Output>>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+
+        match this.inner.poll(cx) {
+            Poll::Ready(item) => Poll::Ready(this.channel.try_send(item)),
+            Poll::Pending => Poll::Pending,
         }
     }
 }

@@ -1,5 +1,7 @@
 //! Traits for spawning futures on an executor.
 
+#![no_std]
+
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
@@ -8,12 +10,11 @@ mod ext;
 pub mod impls;
 
 #[cfg(feature = "ext")]
-pub use ext::{BoxedExecutor, ExecutorExt, LocalBoxedExecutor, InfallibleExecutor};
+pub use ext::{all, all_limited, or, BoxedExecutor, InfallibleExecutor, LocalBoxedExecutor};
 
 use core::future::Future;
 
 /// Trait for an executor that [`Future`]s can be spawned onto.
-// TODO: Replace `F` here with a GAT once 1.65 is available on Debian Stable.
 pub trait Executor<F: Future> {
     /// The task type produced by spawning a future.
     ///
