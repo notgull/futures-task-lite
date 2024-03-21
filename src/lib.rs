@@ -10,9 +10,26 @@ mod ext;
 pub mod impls;
 
 #[cfg(feature = "ext")]
-pub use ext::{all, all_limited, or, BoxedExecutor, InfallibleExecutor, LocalBoxedExecutor};
+pub use ext::{all, all_limited, or, BoxedExecutor, LocalBoxedExecutor};
 
+use core::convert::Infallible;
 use core::future::Future;
+
+/// Extension trait for a [`Future`].
+/// 
+/// [`Future`]: core::future::Future
+pub trait FutureExt: Future + Sized {
+    /// Spawn this future on an executor.
+    fn try_par<E: Executor<Self>>(self, ex: E) -> Result<E::Task, E::Error> {
+        ex.try_spawn(self)
+    }
+
+    // Spawn this future on an executor infallibly.
+    fn par<E: InfallibleExecutor<Self>>(self, ex: E) -> E::Task {
+        ex.spawn(self)
+    }
+}
+impl<F: Future + Sized> FutureExt for F {}
 
 /// Trait for an executor that [`Future`]s can be spawned onto.
 pub trait Executor<F: Future> {
@@ -63,6 +80,18 @@ pub trait DetachableTask: Future {
     /// Detach this future and let it run forever.
     fn detach(self);
 }
+
+/// Executors that are infallible.
+pub trait InfallibleExecutor<F: Future>: Executor<F, Error = Infallible> {
+    /// Spawn a task infallibly.
+    fn spawn(&self, future: F) -> Self::Task {
+        match self.try_spawn(future) {
+            Ok(task) => task,
+            Err(infl) => match infl {},
+        }
+    }
+}
+impl<F: Future, E: Executor<F, Error = Infallible>> InfallibleExecutor<F> for E {}
 
 #[cfg(feature = "alloc")]
 mod alloc_impls {
