@@ -5,18 +5,21 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-#[cfg(feature = "ext")]
-mod ext;
+#[cfg(feature = "std")]
+extern crate std;
+
+#[cfg(feature = "std")]
+mod boxed;
 pub mod impls;
 
-#[cfg(feature = "ext")]
-pub use ext::{all, all_limited, or, BoxedExecutor, LocalBoxedExecutor};
+#[cfg(feature = "std")]
+pub use boxed::{BoxedExecutor, LocalBoxedExecutor};
 
 use core::convert::Infallible;
 use core::future::Future;
 
 /// Extension trait for a [`Future`].
-/// 
+///
 /// [`Future`]: core::future::Future
 pub trait FutureExt: Future + Sized {
     /// Spawn this future on an executor.
